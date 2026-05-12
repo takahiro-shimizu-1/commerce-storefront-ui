@@ -10,14 +10,23 @@
       "workflowDefaultToken": "github.token",
       "workflowFallbackSecret": "AUTOMATION_RUNNER_PACKAGE_TOKEN",
       "localEnv": "AUTOMATION_RUNNER_PACKAGE_TOKEN",
-      "requiredClassicScopes": ["read:packages"]
+      "requiredClassicScopes": [
+        "read:packages"
+      ]
     }
   },
   "runnerBaseline": {
     "node": "20",
-    "requiredTools": ["bash", "gh", "jq", "python3"],
+    "requiredTools": [
+      "bash",
+      "gh",
+      "jq",
+      "python3"
+    ],
     "optionalToolsByProfile": {
-      "deploy-enabled": ["gcloud"]
+      "deploy-enabled": [
+        "gcloud"
+      ]
     }
   },
   "gitnexus": {
@@ -81,13 +90,19 @@
         "forbidden": []
       },
       "secrets": {
-        "required": ["ANTHROPIC_API_KEY"],
-        "optional": ["GH_PROJECT_TOKEN", "AUTOMATION_RUNNER_PACKAGE_TOKEN"],
+        "required": [
+          "ANTHROPIC_API_KEY"
+        ],
+        "optional": [
+          "GH_PROJECT_TOKEN",
+          "AUTOMATION_RUNNER_PACKAGE_TOKEN"
+        ],
         "forbidden": []
       },
       "variables": {
         "required": [],
         "optional": [
+          "AUTOMATION_SCHEDULED_MAINTENANCE_ENABLED",
           "AUTONOMOUS_AGENT_LABEL_EXECUTE_ENABLED",
           "AUTONOMOUS_AGENT_COMMENT_EXECUTE_ENABLED"
         ],
@@ -113,13 +128,19 @@
         "forbidden": []
       },
       "secrets": {
-        "required": ["ANTHROPIC_API_KEY"],
-        "optional": ["GH_PROJECT_TOKEN", "AUTOMATION_RUNNER_PACKAGE_TOKEN"],
+        "required": [
+          "ANTHROPIC_API_KEY"
+        ],
+        "optional": [
+          "GH_PROJECT_TOKEN",
+          "AUTOMATION_RUNNER_PACKAGE_TOKEN"
+        ],
         "forbidden": []
       },
       "variables": {
         "required": [],
         "optional": [
+          "AUTOMATION_SCHEDULED_MAINTENANCE_ENABLED",
           "AUTONOMOUS_AGENT_LABEL_EXECUTE_ENABLED",
           "AUTONOMOUS_AGENT_COMMENT_EXECUTE_ENABLED",
           "AUTOMATION_ENABLE_CODEGEN_WRITE",
@@ -162,13 +183,20 @@
         "forbidden": []
       },
       "secrets": {
-        "required": ["ANTHROPIC_API_KEY"],
-        "optional": ["GH_PROJECT_TOKEN", "AUTOMATION_RUNNER_PACKAGE_TOKEN", "AUTOMATION_CLOUD_RUN_PG_PASSWORD"],
+        "required": [
+          "ANTHROPIC_API_KEY"
+        ],
+        "optional": [
+          "GH_PROJECT_TOKEN",
+          "AUTOMATION_RUNNER_PACKAGE_TOKEN",
+          "AUTOMATION_CLOUD_RUN_PG_PASSWORD"
+        ],
         "forbidden": []
       },
       "variables": {
         "required": [],
         "optional": [
+          "AUTOMATION_SCHEDULED_MAINTENANCE_ENABLED",
           "AUTONOMOUS_AGENT_LABEL_EXECUTE_ENABLED",
           "AUTONOMOUS_AGENT_COMMENT_EXECUTE_ENABLED",
           "AUTOMATION_ENABLE_CODEGEN_WRITE",
