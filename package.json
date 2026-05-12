@@ -1,0 +1,10 @@
+{
+  "name": "commerce-storefront-ui",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
