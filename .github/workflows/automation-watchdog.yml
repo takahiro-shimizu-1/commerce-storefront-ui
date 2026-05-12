@@ -1,0 +1,85 @@
+name: Automation Watchdog
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: automation-watchdog-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+  issues: read
+  packages: read
+
+env:
+  NODE_VERSION: '20'
+  SHARED_RUNNER_COMMAND: "npx -y @takahiro-shimizu-1/automation-runner@0.1.14"
+  SHARED_RUNNER_PACKAGE_SCOPE: "@takahiro-shimizu-1"
+  SHARED_RUNNER_REGISTRY_URL: "https://npm.pkg.github.com"
+  NODE_AUTH_TOKEN: ${{ secrets.AUTOMATION_RUNNER_PACKAGE_TOKEN || github.token }}
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'success'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Select and rerun blocked workflows
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WATCHDOG_APPLY: 'true'
+          WATCHDOG_WORKFLOWS: 'CI'
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          $SHARED_RUNNER_COMMAND watchdog-rerun | tee /tmp/watchdog.json
+          rerun_count="$(node -e 'const fs=require("fs");const json=JSON.parse(fs.readFileSync("/tmp/watchdog.json","utf8")); process.stdout.write(String(json.rerunCount || 0));')"
+          suppressed_lanes="$(node -e 'const fs=require("fs");const json=JSON.parse(fs.readFileSync("/tmp/watchdog.json","utf8")); process.stdout.write(String((json.suppressedTargets || []).length));')"
+          {
+            echo '### Automation Watchdog'
+            echo
+            echo '#### Blocked Workflow Reruns'
+            echo
+            echo "Rerun count: ${rerun_count}"
+            echo "Suppressed lanes: ${suppressed_lanes}"
+            echo
+            cat /tmp/watchdog.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch pending issues
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AUTO_DISPATCH_APPLY: 'true'
+          AUTO_DISPATCH_MAX_ISSUES: ${{ vars.AUTOMATION_AUTO_DISPATCH_MAX_ISSUES || '2' }}
+          AUTO_DISPATCH_WORKFLOW_ID: 'autonomous-agent.yml'
+          AUTO_DISPATCH_EXECUTION_MODE: 'execute'
+          AUTO_DISPATCH_REF: ${{ github.ref_name }}
+        run: |
+          $SHARED_RUNNER_COMMAND auto-dispatch-loop | tee /tmp/auto-dispatch.json
+          $SHARED_RUNNER_COMMAND auto-dispatch-summary /tmp/auto-dispatch.json > /tmp/auto-dispatch-summary.md
+          {
+            echo
+            echo '#### Pending Issue Auto Dispatch'
+            echo
+            cat /tmp/auto-dispatch-summary.md
+          } >> "$GITHUB_STEP_SUMMARY"

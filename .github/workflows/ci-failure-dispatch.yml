@@ -1,0 +1,66 @@
+name: CI Failure Dispatch
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+  packages: read
+
+env:
+  NODE_VERSION: '20'
+  SHARED_RUNNER_COMMAND: "npx -y @takahiro-shimizu-1/automation-runner@0.1.14"
+  SHARED_RUNNER_PACKAGE_SCOPE: "@takahiro-shimizu-1"
+  SHARED_RUNNER_REGISTRY_URL: "https://npm.pkg.github.com"
+  NODE_AUTH_TOKEN: ${{ secrets.AUTOMATION_RUNNER_PACKAGE_TOKEN || github.token }}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Capture failed log excerpt
+        id: logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run view "${{ github.event.workflow_run.id }}" --repo "${{ github.repository }}" --log-failed > /tmp/ci-failed.log 2>/dev/null || true
+          {
+            echo 'excerpt<<EOF'
+            head -120 /tmp/ci-failed.log
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch CI failure issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_HTML_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW_FAILURE_EXCERPT: ${{ steps.logs.outputs.excerpt }}
+        run: |
+          $SHARED_RUNNER_COMMAND ci-failure-dispatch | tee /tmp/ci-dispatch.json
+          lane_key="$(node -e 'const fs=require("fs");const json=JSON.parse(fs.readFileSync("/tmp/ci-dispatch.json","utf8")); process.stdout.write(String(json.laneKey || "unknown"));')"
+          {
+            echo '### CI Failure Dispatch'
+            echo
+            echo "Dispatch lane: ${lane_key}"
+            echo
+            cat /tmp/ci-dispatch.json
+          } >> "$GITHUB_STEP_SUMMARY"

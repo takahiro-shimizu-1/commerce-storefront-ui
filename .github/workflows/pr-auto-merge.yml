@@ -1,0 +1,181 @@
+name: PR Auto Merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+concurrency:
+  group: pr-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  packages: read
+  pull-requests: write
+
+env:
+  NODE_VERSION: '20'
+  SHARED_RUNNER_COMMAND: "npx -y @takahiro-shimizu-1/automation-runner@0.1.14"
+  SHARED_RUNNER_PACKAGE_SCOPE: "@takahiro-shimizu-1"
+  SHARED_RUNNER_REGISTRY_URL: "https://npm.pkg.github.com"
+  NODE_AUTH_TOKEN: ${{ secrets.AUTOMATION_RUNNER_PACKAGE_TOKEN || github.token }}
+
+jobs:
+  auto-merge:
+    if: ${{ 'review-and-pr' == 'review-and-pr' || 'review-and-pr' == 'deploy-enabled' }}
+    name: PR Auto Merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Wait for ci-summary on current head SHA
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CHECK_REF: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $SHARED_RUNNER_COMMAND wait-for-check \
+            --ref "$CHECK_REF" \
+            --workflow "CI" \
+            --event "pull_request" \
+            --timeout-ms 1800000
+
+      - name: Wait for PR Review Gate on current head SHA
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CHECK_REF: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $SHARED_RUNNER_COMMAND wait-for-check \
+            --ref "$CHECK_REF" \
+            --workflow "PR Review Gate" \
+            --event "pull_request" \
+            --timeout-ms 1800000
+
+      - name: Evaluate auto-merge eligibility
+        id: evaluate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          $SHARED_RUNNER_COMMAND pr-auto-merge > /tmp/pr-auto-merge.json
+          cat /tmp/pr-auto-merge.json
+          can_merge="$(node -e 'const fs=require("fs");const json=JSON.parse(fs.readFileSync("/tmp/pr-auto-merge.json","utf8")); process.stdout.write(json.canMerge ? "true" : "false");')"
+          pr_number="$(node -e 'const fs=require("fs");const json=JSON.parse(fs.readFileSync("/tmp/pr-auto-merge.json","utf8")); process.stdout.write(String(json.prNumber || ""));')"
+          {
+            echo 'decision<<EOF'
+            cat /tmp/pr-auto-merge.json
+            echo 'EOF'
+            echo "can_merge=${can_merge}"
+            echo "pr_number=${pr_number}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: steps.evaluate.outputs.can_merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || github.token }}
+        run: |
+          PR_NUMBER="${{ steps.evaluate.outputs.pr_number }}"
+          gh pr merge "$PR_NUMBER" --repo "${{ github.repository }}" --auto --merge
+
+      - name: Fallback manual merge
+        if: steps.evaluate.outputs.can_merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || github.token }}
+        run: |
+          PR_NUMBER="${{ steps.evaluate.outputs.pr_number }}"
+          sleep 10
+          PR_STATE="$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json state -q .state)"
+          if [ "$PR_STATE" = "OPEN" ]; then
+            gh pr merge "$PR_NUMBER" --repo "${{ github.repository }}" --merge --delete-branch
+          fi
+
+      - name: Wait for merged state
+        if: steps.evaluate.outputs.can_merge == 'true'
+        id: merged
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.evaluate.outputs.pr_number }}
+        run: |
+          $SHARED_RUNNER_COMMAND wait-for-pr-merge \
+            --pr "$PR_NUMBER" \
+            --timeout-ms 300000 > /tmp/pr-merge-state.json
+          cat /tmp/pr-merge-state.json
+          merged="$(node -e 'const fs=require("fs");const json=JSON.parse(fs.readFileSync("/tmp/pr-merge-state.json","utf8")); process.stdout.write(json.merged ? "true" : "false");')"
+          {
+            echo 'result<<EOF'
+            cat /tmp/pr-merge-state.json
+            echo 'EOF'
+            echo "merged=${merged}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fail if merge did not complete
+        if: steps.evaluate.outputs.can_merge == 'true' && steps.merged.outputs.merged != 'true'
+        run: |
+          echo "PR #${{ steps.evaluate.outputs.pr_number }} did not reach merged state after auto-merge." >&2
+          exit 1
+
+      - name: Classify linked issues for direct merge sync
+        if: steps.merged.outputs.merged == 'true'
+        id: issue-links
+        env:
+          PULL_REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          closing_targets="$($SHARED_RUNNER_COMMAND pr-issue-links closing-targets)"
+          echo "closing_targets=${closing_targets}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync merged issues immediately
+        if: steps.merged.outputs.merged == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.evaluate.outputs.pr_number }}
+        run: |
+          $SHARED_RUNNER_COMMAND merge-sync --pr "$PR_NUMBER"
+
+      - name: Reconcile parent issue truth immediately
+        if: steps.merged.outputs.merged == 'true' && steps.issue-links.outputs.closing_targets != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          $SHARED_RUNNER_COMMAND issue-reconcile --issues="${{ steps.issue-links.outputs.closing_targets }}"
+
+      - name: Summary
+        if: steps.evaluate.outputs.decision != ''
+        env:
+          DECISION_JSON: ${{ steps.evaluate.outputs.decision }}
+        run: |
+          node <<'NODE'
+          const decision = JSON.parse(process.env.DECISION_JSON || 'null');
+          if (!decision) {
+            process.exit(0);
+          }
+
+          const lines = [
+            '## PR Auto Merge',
+            '',
+            `- PR: #${decision.prNumber}`,
+            `- Publish status: ${decision.publishDecision?.status || 'unknown'}`,
+            `- Can merge: ${decision.canMerge}`,
+            `- Mergeable: ${String(decision.mergeable)}`,
+            `- Mergeable state: ${decision.mergeableState || 'unknown'}`,
+            `- Reasons: ${(decision.reasons || []).join(' | ') || 'none'}`,
+          ];
+
+          require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          NODE

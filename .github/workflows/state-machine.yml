@@ -1,0 +1,102 @@
+name: 🔄 State Machine Observation
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  observe-coordinator-assignment:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      contains(github.event.label.name, 'agent:coordinator')
+    name: Observe Coordinator Assignment
+
+    steps:
+      - name: Observe bootstrap ownership
+        run: |
+          echo "Observed agent:coordinator on issue #${{ github.event.issue.number }}."
+          echo "Issue bootstrap and runtime handlers own the analyzing transition."
+
+  observe-specialist-assignment:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      (contains(github.event.label.name, 'agent:codegen') ||
+       contains(github.event.label.name, 'agent:issue') ||
+       contains(github.event.label.name, 'agent:pr'))
+    name: Observe Specialist Assignment
+
+    steps:
+      - name: Observe specialist ownership
+        run: |
+          echo "Observed specialist label on issue #${{ github.event.issue.number }}."
+          echo "Specialist handlers and monotonic issue progress sync own runtime state advancement."
+
+  observe-pr-created:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      (github.event.action == 'opened' ||
+       github.event.action == 'reopened' ||
+       github.event.action == 'ready_for_review') &&
+      github.event.pull_request.draft == false
+    name: Observe PR Review Sync Ownership
+
+    steps:
+      - name: Observe review-gate ownership
+        run: |
+          echo "Observed ready-for-review PR #${{ github.event.pull_request.number }}."
+          echo "PR Review Gate and pr-review-state-sync own linked issue review synchronization."
+
+  blocked-escalation:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      contains(github.event.label.name, 'state:blocked')
+    name: Blocked - Escalate
+
+    steps:
+      - name: Create escalation comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: `🚨 **BLOCKED - Guardian Escalation**
+
+              This issue has been marked as blocked and requires Guardian intervention.
+
+              @${{ github.repository_owner }} - Please review and resolve.
+
+              **Next Steps**:
+              1. Review blocker reason
+              2. Resolve dependencies or technical issues
+              3. Remove \`🔴 state:blocked\` label when ready
+              4. Add appropriate state label to resume
+
+              ---
+              *Automated by State Machine Observation*`
+            });
+
+      - name: Add severity label
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: ['⚠️ severity:Sev.2-High']
+            });

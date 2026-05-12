@@ -1,0 +1,9 @@
+{
+  "repository": {
+    "slug": "takahiro-shimizu-1/commerce-storefront-ui"
+  },
+  "workspaceGlobs": [
+    "."
+  ],
+  "auditWorkspaceGlobs": []
+}

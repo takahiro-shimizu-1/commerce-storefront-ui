@@ -1,0 +1,86 @@
+name: Issue Opened - Auto Label
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Auto-label new issue
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const liveIssue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+            });
+            const existingLabels = new Set(
+              liveIssue.data.labels
+                .map((label) => typeof label === 'string' ? label : (label.name || ''))
+                .filter(Boolean),
+            );
+            const title = context.payload.issue.title.toLowerCase();
+            const body = (context.payload.issue.body || '').toLowerCase();
+            const text = `${title} ${body}`;
+            const hasReportLabel = [...existingLabels].some((label) => label.includes('report:'));
+            const isPublicationSink =
+              body.includes('<!-- miyabi-publication-sink') ||
+              (hasReportLabel &&
+                existingLabels.has('🤖 system:automation') &&
+                (
+                  title.startsWith('📊 weekly kpi report:') ||
+                  title.startsWith('📊 weekly automation report:') ||
+                  body.includes('## weekly kpi snapshot') ||
+                  body.includes('## weekly automation report')
+                ));
+
+            if (isPublicationSink) {
+              console.log(`Skipping auto-label bootstrap for publication sink issue #${context.payload.issue.number}`);
+              return;
+            }
+
+            const labels = new Set();
+
+            if (text.includes('bug') || text.includes('error') || text.includes('fix')) {
+              labels.add('🐛 type:bug');
+            } else if (text.includes('feature') || text.includes('add') || text.includes('implement')) {
+              labels.add('✨ type:feature');
+            } else if (text.includes('doc') || text.includes('readme')) {
+              labels.add('📚 type:docs');
+            } else if (text.includes('refactor') || text.includes('cleanup')) {
+              labels.add('♻️ type:refactor');
+            } else if (text.includes('test') || text.includes('coverage')) {
+              labels.add('🧪 type:test');
+            }
+
+            if (text.includes('urgent') || text.includes('critical')) {
+              labels.add('📊 priority:P0-Critical');
+            } else if (text.includes('important') || text.includes('high')) {
+              labels.add('⚠️ priority:P1-High');
+            } else {
+              labels.add('📊 priority:P2-Medium');
+            }
+
+            const hasStateLabel = [...existingLabels].some((label) => label.includes('state:'));
+            if (!hasStateLabel) {
+              labels.add('📥 state:pending');
+            }
+
+            labels.add('🎯 phase:planning');
+
+            const nextLabels = [...labels].filter((label) => !existingLabels.has(label));
+            if (nextLabels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                labels: nextLabels
+              });
+            }

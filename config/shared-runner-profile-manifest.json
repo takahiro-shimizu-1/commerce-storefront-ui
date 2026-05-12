@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "selectedProfile": "review-and-pr",
+  "runnerCommand": "npx -y @takahiro-shimizu-1/automation-runner@0.1.14",
+  "runnerPackage": {
+    "name": "@takahiro-shimizu-1/automation-runner",
+    "scope": "@takahiro-shimizu-1",
+    "registry": "https://npm.pkg.github.com",
+    "auth": {
+      "workflowDefaultToken": "github.token",
+      "workflowFallbackSecret": "AUTOMATION_RUNNER_PACKAGE_TOKEN",
+      "localEnv": "AUTOMATION_RUNNER_PACKAGE_TOKEN",
+      "requiredClassicScopes": ["read:packages"]
+    }
+  },
+  "runnerBaseline": {
+    "node": "20",
+    "requiredTools": ["bash", "gh", "jq", "python3"],
+    "optionalToolsByProfile": {
+      "deploy-enabled": ["gcloud"]
+    }
+  },
+  "gitnexus": {
+    "repoName": "commerce-storefront-ui",
+    "registryName": "commerce-storefront-ui",
+    "repoSlug": "takahiro-shimizu-1/commerce-storefront-ui",
+    "portfolios": [
+      {
+        "name": "commerce-e2e",
+        "groupPath": "frontends/storefront"
+      }
+    ],
+    "bootstrap": {
+      "enabled": true,
+      "defaultCommand": "automation-runner gitnexus-bootstrap"
+    }
+  },
+  "bootstrapAssets": {
+    "workflows": [
+      ".github/workflows/issue-opened.yml",
+      ".github/workflows/state-machine.yml",
+      ".github/workflows/label-sync.yml",
+      ".github/workflows/autonomous-agent.yml",
+      ".github/workflows/pr-opened.yml",
+      ".github/workflows/pr-auto-merge.yml",
+      ".github/workflows/automation-watchdog.yml",
+      ".github/workflows/automation-heartbeat.yml",
+      ".github/workflows/ci-failure-dispatch.yml",
+      ".github/workflows/deploy-pages.yml",
+      ".github/workflows/autonomous-deploy-execute.yml"
+    ],
+    "labels": [
+      ".github/labels.yml"
+    ],
+    "templates": [
+      ".github/ISSUE_TEMPLATE/agent-task.md",
+      ".github/PULL_REQUEST_TEMPLATE.md"
+    ],
+    "claudeCommands": [
+      ".claude/commands/miyabi-auto-app.md",
+      ".claude/commands/miyabi-status.md"
+    ],
+    "onboarding": [
+      ".claude/settings.example.json",
+      ".npmrc.example",
+      ".env.example",
+      "docs/GITHUB_TOKEN_SETUP.md"
+    ]
+  },
+  "profiles": {
+    "planning-only": {
+      "permissions": {
+        "required": {
+          "actions": "write",
+          "contents": "read",
+          "issues": "write",
+          "packages": "read",
+          "pull-requests": "write"
+        },
+        "optional": {},
+        "forbidden": []
+      },
+      "secrets": {
+        "required": ["ANTHROPIC_API_KEY"],
+        "optional": ["GH_PROJECT_TOKEN", "AUTOMATION_RUNNER_PACKAGE_TOKEN"],
+        "forbidden": []
+      },
+      "variables": {
+        "required": [],
+        "optional": [
+          "AUTONOMOUS_AGENT_LABEL_EXECUTE_ENABLED",
+          "AUTONOMOUS_AGENT_COMMENT_EXECUTE_ENABLED"
+        ],
+        "forbidden": []
+      },
+      "plannedPackageWrappers": [
+        ".github/workflows/autonomous-agent.yml",
+        ".github/workflows/automation-watchdog.yml",
+        ".github/workflows/automation-heartbeat.yml",
+        ".github/workflows/ci-failure-dispatch.yml"
+      ]
+    },
+    "review-and-pr": {
+      "permissions": {
+        "required": {
+          "actions": "write",
+          "contents": "write",
+          "issues": "write",
+          "packages": "read",
+          "pull-requests": "write"
+        },
+        "optional": {},
+        "forbidden": []
+      },
+      "secrets": {
+        "required": ["ANTHROPIC_API_KEY"],
+        "optional": ["GH_PROJECT_TOKEN", "AUTOMATION_RUNNER_PACKAGE_TOKEN"],
+        "forbidden": []
+      },
+      "variables": {
+        "required": [],
+        "optional": [
+          "AUTONOMOUS_AGENT_LABEL_EXECUTE_ENABLED",
+          "AUTONOMOUS_AGENT_COMMENT_EXECUTE_ENABLED",
+          "AUTOMATION_ENABLE_CODEGEN_WRITE",
+          "AUTOMATION_CODEGEN_COMMAND",
+          "AUTOMATION_CODEGEN_ALLOWED_PATHS",
+          "AUTOMATION_CODEGEN_REQUIRE_CHANGES",
+          "AUTOMATION_CODEGEN_POSTCHECK_COMMAND",
+          "AUTOMATION_REVIEW_MIN_SCORE",
+          "AUTOMATION_REVIEW_MAX_RETRIES",
+          "AUTOMATION_REVIEW_CHECKS_JSON",
+          "AUTOMATION_REVIEW_COVERAGE_THRESHOLD",
+          "AUTOMATION_REVIEW_COVERAGE_LABELS",
+          "AUTOMATION_ENABLE_PR_WRITE",
+          "AUTOMATION_PR_BASE",
+          "AUTOMATION_PR_REVIEWERS",
+          "AUTOMATION_PR_LABELS",
+          "AUTOMATION_PR_REQUIRE_MERGEABLE",
+          "AUTOMATION_PR_MERGEABILITY_RETRIES",
+          "AUTOMATION_PR_MERGEABILITY_DELAY_MS"
+        ],
+        "forbidden": []
+      },
+      "plannedPackageWrappers": [
+        ".github/workflows/pr-opened.yml",
+        ".github/workflows/pr-auto-merge.yml"
+      ]
+    },
+    "deploy-enabled": {
+      "permissions": {
+        "required": {
+          "actions": "write",
+          "contents": "write",
+          "issues": "write",
+          "id-token": "write",
+          "packages": "read",
+          "pages": "write",
+          "pull-requests": "write"
+        },
+        "optional": {},
+        "forbidden": []
+      },
+      "secrets": {
+        "required": ["ANTHROPIC_API_KEY"],
+        "optional": ["GH_PROJECT_TOKEN", "AUTOMATION_RUNNER_PACKAGE_TOKEN", "AUTOMATION_CLOUD_RUN_PG_PASSWORD"],
+        "forbidden": []
+      },
+      "variables": {
+        "required": [],
+        "optional": [
+          "AUTONOMOUS_AGENT_LABEL_EXECUTE_ENABLED",
+          "AUTONOMOUS_AGENT_COMMENT_EXECUTE_ENABLED",
+          "AUTOMATION_ENABLE_CODEGEN_WRITE",
+          "AUTOMATION_CODEGEN_COMMAND",
+          "AUTOMATION_CODEGEN_ALLOWED_PATHS",
+          "AUTOMATION_CODEGEN_REQUIRE_CHANGES",
+          "AUTOMATION_CODEGEN_POSTCHECK_COMMAND",
+          "AUTOMATION_REVIEW_MIN_SCORE",
+          "AUTOMATION_REVIEW_MAX_RETRIES",
+          "AUTOMATION_REVIEW_CHECKS_JSON",
+          "AUTOMATION_REVIEW_COVERAGE_THRESHOLD",
+          "AUTOMATION_REVIEW_COVERAGE_LABELS",
+          "AUTOMATION_ENABLE_PR_WRITE",
+          "AUTOMATION_PR_BASE",
+          "AUTOMATION_PR_REVIEWERS",
+          "AUTOMATION_PR_LABELS",
+          "AUTOMATION_PR_REQUIRE_MERGEABLE",
+          "AUTOMATION_PR_MERGEABILITY_RETRIES",
+          "AUTOMATION_PR_MERGEABILITY_DELAY_MS",
+          "AUTOMATION_ENABLE_DEPLOY",
+          "AUTOMATION_DEPLOY_COMMAND",
+          "AUTOMATION_DEPLOY_BUILD_COMMAND",
+          "AUTOMATION_DEPLOY_PREFLIGHT_COMMAND",
+          "AUTOMATION_DEPLOY_HEALTHCHECK_COMMAND",
+          "AUTOMATION_DEPLOY_HEALTHCHECK_RETRIES",
+          "AUTOMATION_DEPLOY_HEALTHCHECK_DELAY_MS",
+          "AUTOMATION_DEPLOY_ROLLBACK_COMMAND",
+          "AUTOMATION_DEPLOY_USE_PROVIDER_PRESET",
+          "AUTOMATION_DEPLOY_PROVIDER",
+          "AUTOMATION_DEPLOY_TARGET",
+          "AUTOMATION_DEPLOY_ENVIRONMENT",
+          "AUTOMATION_DEPLOY_REQUIRE_APPROVAL",
+          "AUTOMATION_DEPLOY_ALLOWED_APPROVERS",
+          "AUTOMATION_GITHUB_PAGES_ENABLED",
+          "AUTOMATION_GITHUB_PAGES_WORKFLOW",
+          "AUTOMATION_GITHUB_PAGES_REF",
+          "AUTOMATION_GITHUB_PAGES_WAIT_FOR_RUN",
+          "AUTOMATION_GITHUB_PAGES_RUN_TIMEOUT_MS",
+          "AUTOMATION_GITHUB_PAGES_POLL_INTERVAL_MS",
+          "AUTOMATION_CLOUD_RUN_DRY_RUN",
+          "AUTOMATION_CLOUD_RUN_TARGET_VARIANT",
+          "AUTOMATION_CLOUD_RUN_PROJECT_ID",
+          "AUTOMATION_CLOUD_RUN_SERVICE_NAME",
+          "AUTOMATION_CLOUD_RUN_BACKEND_SERVICE_NAME",
+          "AUTOMATION_CLOUD_RUN_FRONTEND_SERVICE_NAME",
+          "AUTOMATION_CLOUD_RUN_FRONTEND_URL",
+          "AUTOMATION_CLOUD_RUN_BACKEND_URL",
+          "AUTOMATION_CLOUD_RUN_DATASET_NAME",
+          "AUTOMATION_CLOUD_RUN_CONNECTION_TYPE",
+          "AUTOMATION_CLOUD_RUN_CLOUD_SQL_INSTANCE",
+          "AUTOMATION_CLOUD_RUN_PG_HOST",
+          "AUTOMATION_CLOUD_RUN_PG_USER",
+          "AUTOMATION_CLOUD_RUN_PG_DATABASE",
+          "AUTOMATION_CLOUD_RUN_PG_PORT",
+          "AUTOMATION_CLOUD_RUN_PG_SSLMODE",
+          "AUTOMATION_CLOUD_RUN_PG_SCHEMA",
+          "AUTOMATION_CLOUD_RUN_ENABLE_CONTACT_DELETE"
+        ],
+        "forbidden": []
+      },
+      "plannedPackageWrappers": [
+        ".github/workflows/deploy-pages.yml",
+        ".github/workflows/autonomous-deploy-execute.yml"
+      ]
+    }
+  }
+}

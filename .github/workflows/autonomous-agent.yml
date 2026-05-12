@@ -1,0 +1,248 @@
+name: Autonomous Agent Execution
+
+on:
+  issues:
+    types: [opened, labeled, edited]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to process'
+        required: true
+        type: number
+      execution_mode:
+        description: 'planning or execute'
+        required: true
+        default: planning
+        type: choice
+        options:
+          - planning
+          - execute
+      deploy_approval_reason:
+        description: 'Optional approval note for protected deployment execution'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: '20'
+  SHARED_RUNNER_COMMAND: "npx -y @takahiro-shimizu-1/automation-runner@0.1.14"
+  SHARED_RUNNER_PACKAGE_SCOPE: "@takahiro-shimizu-1"
+  SHARED_RUNNER_REGISTRY_URL: "https://npm.pkg.github.com"
+  NODE_AUTH_TOKEN: ${{ secrets.AUTOMATION_RUNNER_PACKAGE_TOKEN || github.token }}
+
+concurrency:
+  group: autonomous-agent-${{ github.repository }}-issue:agent/issue-${{ github.event.issue.number || github.event.inputs.issue_number || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  check-trigger:
+    name: Check Agent Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      should_execute: ${{ steps.check.outputs.should_execute }}
+      issue_number: ${{ steps.check.outputs.issue_number }}
+      execution_mode: ${{ steps.check.outputs.execution_mode }}
+      trigger_source: ${{ steps.check.outputs.trigger_source }}
+      trigger_note: ${{ steps.check.outputs.trigger_note }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Check trigger conditions
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+          INPUT_EXECUTION_MODE: ${{ github.event.inputs.execution_mode }}
+          LABEL_EXECUTE_GATE: ${{ vars.AUTONOMOUS_AGENT_LABEL_EXECUTE_ENABLED }}
+          COMMENT_EXECUTE_GATE: ${{ vars.AUTONOMOUS_AGENT_COMMENT_EXECUTE_ENABLED }}
+        run: |
+          $SHARED_RUNNER_COMMAND trigger
+
+  execute-agents:
+    name: Run Autonomous Agent Runtime
+    runs-on: ubuntu-latest
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_execute == 'true'
+    permissions:
+      actions: write
+      issues: write
+      contents: write
+      packages: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Validate repository topology contract
+        run: |
+          $SHARED_RUNNER_COMMAND topology
+
+      - name: Log trigger mode
+        run: |
+          echo "Trigger source: ${{ needs.check-trigger.outputs.trigger_source }}"
+          echo "Trigger note: ${{ needs.check-trigger.outputs.trigger_note }}"
+          echo "Execution mode: ${{ needs.check-trigger.outputs.execution_mode }}"
+
+      - name: Execute autonomous runtime
+        id: execute
+        run: |
+          echo "Starting ${{ needs.check-trigger.outputs.execution_mode }} runtime for Issue #${{ needs.check-trigger.outputs.issue_number }}"
+          $SHARED_RUNNER_COMMAND dispatch \
+            --issue "${{ needs.check-trigger.outputs.issue_number }}" \
+            --concurrency 3 \
+            --log-level info \
+            --execution-mode "${{ needs.check-trigger.outputs.execution_mode }}" \
+            --bootstrap \
+            --bootstrap-reason "Triggered by ${{ needs.check-trigger.outputs.trigger_source }}: ${{ needs.check-trigger.outputs.trigger_note }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPOSITORY: ${{ github.repository }}
+          USE_WORKTREE: 'true'
+          AUTOMATION_ENABLE_PR_WRITE: ${{ vars.AUTOMATION_ENABLE_PR_WRITE }}
+          AUTOMATION_PR_BASE: ${{ vars.AUTOMATION_PR_BASE }}
+          AUTOMATION_PR_REVIEWERS: ${{ vars.AUTOMATION_PR_REVIEWERS }}
+          AUTOMATION_PR_LABELS: ${{ vars.AUTOMATION_PR_LABELS }}
+          AUTOMATION_PR_REQUIRE_MERGEABLE: ${{ vars.AUTOMATION_PR_REQUIRE_MERGEABLE }}
+          AUTOMATION_PR_MERGEABILITY_RETRIES: ${{ vars.AUTOMATION_PR_MERGEABILITY_RETRIES }}
+          AUTOMATION_PR_MERGEABILITY_DELAY_MS: ${{ vars.AUTOMATION_PR_MERGEABILITY_DELAY_MS }}
+          AUTOMATION_ENABLE_CODEGEN_WRITE: ${{ vars.AUTOMATION_ENABLE_CODEGEN_WRITE }}
+          AUTOMATION_CODEGEN_COMMAND: ${{ vars.AUTOMATION_CODEGEN_COMMAND }}
+          AUTOMATION_CODEGEN_ALLOWED_PATHS: ${{ vars.AUTOMATION_CODEGEN_ALLOWED_PATHS }}
+          AUTOMATION_CODEGEN_REQUIRE_CHANGES: ${{ vars.AUTOMATION_CODEGEN_REQUIRE_CHANGES }}
+          AUTOMATION_CODEGEN_POSTCHECK_COMMAND: ${{ vars.AUTOMATION_CODEGEN_POSTCHECK_COMMAND }}
+          AUTOMATION_REVIEW_MIN_SCORE: ${{ vars.AUTOMATION_REVIEW_MIN_SCORE }}
+          AUTOMATION_REVIEW_MAX_RETRIES: ${{ vars.AUTOMATION_REVIEW_MAX_RETRIES }}
+          AUTOMATION_REVIEW_CHECKS_JSON: ${{ vars.AUTOMATION_REVIEW_CHECKS_JSON }}
+          AUTOMATION_REVIEW_COVERAGE_THRESHOLD: ${{ vars.AUTOMATION_REVIEW_COVERAGE_THRESHOLD }}
+          AUTOMATION_REVIEW_COVERAGE_LABELS: ${{ vars.AUTOMATION_REVIEW_COVERAGE_LABELS }}
+          AUTOMATION_ENABLE_DEPLOY: ${{ vars.AUTOMATION_ENABLE_DEPLOY }}
+          AUTOMATION_DEPLOY_COMMAND: ${{ vars.AUTOMATION_DEPLOY_COMMAND }}
+          AUTOMATION_DEPLOY_BUILD_COMMAND: ${{ vars.AUTOMATION_DEPLOY_BUILD_COMMAND }}
+          AUTOMATION_DEPLOY_USE_PROVIDER_PRESET: ${{ vars.AUTOMATION_DEPLOY_USE_PROVIDER_PRESET }}
+          AUTOMATION_DEPLOY_PROVIDER: ${{ vars.AUTOMATION_DEPLOY_PROVIDER }}
+          AUTOMATION_DEPLOY_TARGET: ${{ vars.AUTOMATION_DEPLOY_TARGET }}
+          AUTOMATION_DEPLOY_ENVIRONMENT: ${{ vars.AUTOMATION_DEPLOY_ENVIRONMENT }}
+          AUTOMATION_DEPLOY_REQUIRE_APPROVAL: ${{ vars.AUTOMATION_DEPLOY_REQUIRE_APPROVAL }}
+          AUTOMATION_DEPLOY_ALLOWED_APPROVERS: ${{ vars.AUTOMATION_DEPLOY_ALLOWED_APPROVERS }}
+          AUTOMATION_DEPLOY_APPROVED_BY: ${{ github.actor }}
+          AUTOMATION_DEPLOY_APPROVAL_SOURCE: ${{ needs.check-trigger.outputs.trigger_source }}
+          AUTOMATION_DEPLOY_APPROVAL_REASON: ${{ github.event.inputs.deploy_approval_reason || needs.check-trigger.outputs.trigger_note }}
+          AUTOMATION_DEPLOY_PREFLIGHT_COMMAND: ${{ vars.AUTOMATION_DEPLOY_PREFLIGHT_COMMAND }}
+          AUTOMATION_DEPLOY_HEALTHCHECK_COMMAND: ${{ vars.AUTOMATION_DEPLOY_HEALTHCHECK_COMMAND }}
+          AUTOMATION_DEPLOY_HEALTHCHECK_RETRIES: ${{ vars.AUTOMATION_DEPLOY_HEALTHCHECK_RETRIES }}
+          AUTOMATION_DEPLOY_HEALTHCHECK_DELAY_MS: ${{ vars.AUTOMATION_DEPLOY_HEALTHCHECK_DELAY_MS }}
+          AUTOMATION_DEPLOY_ROLLBACK_COMMAND: ${{ vars.AUTOMATION_DEPLOY_ROLLBACK_COMMAND }}
+          AUTOMATION_CLOUD_RUN_PROJECT_ID: ${{ vars.AUTOMATION_CLOUD_RUN_PROJECT_ID }}
+          AUTOMATION_CLOUD_RUN_SERVICE_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_SERVICE_NAME }}
+          AUTOMATION_CLOUD_RUN_BACKEND_SERVICE_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_BACKEND_SERVICE_NAME }}
+          AUTOMATION_CLOUD_RUN_FRONTEND_SERVICE_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_FRONTEND_SERVICE_NAME }}
+          AUTOMATION_CLOUD_RUN_FRONTEND_URL: ${{ vars.AUTOMATION_CLOUD_RUN_FRONTEND_URL }}
+          AUTOMATION_CLOUD_RUN_BACKEND_URL: ${{ vars.AUTOMATION_CLOUD_RUN_BACKEND_URL }}
+          AUTOMATION_CLOUD_RUN_DATASET_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_DATASET_NAME }}
+          AUTOMATION_CLOUD_RUN_CONNECTION_TYPE: ${{ vars.AUTOMATION_CLOUD_RUN_CONNECTION_TYPE }}
+          AUTOMATION_CLOUD_RUN_CLOUD_SQL_INSTANCE: ${{ vars.AUTOMATION_CLOUD_RUN_CLOUD_SQL_INSTANCE }}
+          AUTOMATION_CLOUD_RUN_PG_HOST: ${{ vars.AUTOMATION_CLOUD_RUN_PG_HOST }}
+          AUTOMATION_CLOUD_RUN_PG_USER: ${{ vars.AUTOMATION_CLOUD_RUN_PG_USER }}
+          AUTOMATION_CLOUD_RUN_PG_PASSWORD: ${{ secrets.AUTOMATION_CLOUD_RUN_PG_PASSWORD }}
+          AUTOMATION_CLOUD_RUN_PG_DATABASE: ${{ vars.AUTOMATION_CLOUD_RUN_PG_DATABASE }}
+          AUTOMATION_CLOUD_RUN_PG_PORT: ${{ vars.AUTOMATION_CLOUD_RUN_PG_PORT }}
+          AUTOMATION_CLOUD_RUN_PG_SSLMODE: ${{ vars.AUTOMATION_CLOUD_RUN_PG_SSLMODE }}
+          AUTOMATION_CLOUD_RUN_PG_SCHEMA: ${{ vars.AUTOMATION_CLOUD_RUN_PG_SCHEMA }}
+          AUTOMATION_CLOUD_RUN_ENABLE_CONTACT_DELETE: ${{ vars.AUTOMATION_CLOUD_RUN_ENABLE_CONTACT_DELETE }}
+          AUTOMATION_GITHUB_PAGES_ENABLED: ${{ vars.AUTOMATION_GITHUB_PAGES_ENABLED }}
+          AUTOMATION_GITHUB_PAGES_WORKFLOW: ${{ vars.AUTOMATION_GITHUB_PAGES_WORKFLOW }}
+          AUTOMATION_GITHUB_PAGES_REF: ${{ vars.AUTOMATION_GITHUB_PAGES_REF }}
+          AUTOMATION_GITHUB_PAGES_WAIT_FOR_RUN: ${{ vars.AUTOMATION_GITHUB_PAGES_WAIT_FOR_RUN }}
+          AUTOMATION_GITHUB_PAGES_RUN_TIMEOUT_MS: ${{ vars.AUTOMATION_GITHUB_PAGES_RUN_TIMEOUT_MS }}
+          AUTOMATION_GITHUB_PAGES_POLL_INTERVAL_MS: ${{ vars.AUTOMATION_GITHUB_PAGES_POLL_INTERVAL_MS }}
+        continue-on-error: true
+
+      - name: Summarize execution artifacts
+        id: summarize
+        if: always()
+        run: |
+          $SHARED_RUNNER_COMMAND summary \
+            --issue "${{ needs.check-trigger.outputs.issue_number }}" \
+            --root "$GITHUB_WORKSPACE" \
+            --status "${{ steps.execute.outcome == 'success' && 'success' || 'failure' }}" \
+            --triggered-by "${{ github.actor }}" \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --out-md "$RUNNER_TEMP/autonomous-agent-comment.md" \
+            --out-json "$RUNNER_TEMP/autonomous-agent-summary.json"
+
+          {
+            echo "comment_path=$RUNNER_TEMP/autonomous-agent-comment.md"
+            echo "summary_json_path=$RUNNER_TEMP/autonomous-agent-summary.json"
+          } >> "$GITHUB_OUTPUT"
+
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('fs');
+          const summary = JSON.parse(fs.readFileSync(process.env.SUMMARY_JSON_PATH, 'utf8'));
+          console.log(`status=${summary.status}`);
+          console.log(`execution_mode=${summary.executionMode}`);
+          console.log(`failed_tasks=${summary.totals.failed}`);
+          NODE
+        env:
+          SUMMARY_JSON_PATH: ${{ runner.temp }}/autonomous-agent-summary.json
+
+      - name: Run Water Spider continuity controller
+        id: water_spider
+        if: always()
+        run: |
+          $SHARED_RUNNER_COMMAND water-spider \
+            --issue "${{ needs.check-trigger.outputs.issue_number }}" \
+            --root "$GITHUB_WORKSPACE" \
+            --summary-json "${{ steps.summarize.outputs.summary_json_path }}" \
+            --trigger-source "${{ needs.check-trigger.outputs.trigger_source }}" \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --out-md "$RUNNER_TEMP/water-spider-comment.md" \
+            --out-json "$RUNNER_TEMP/water-spider-summary.json"
+
+          {
+            echo "comment_path=$RUNNER_TEMP/water-spider-comment.md"
+            echo "summary_json_path=$RUNNER_TEMP/water-spider-summary.json"
+          } >> "$GITHUB_OUTPUT"
+
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('fs');
+          const summary = JSON.parse(fs.readFileSync(process.env.WATER_SPIDER_JSON_PATH, 'utf8'));
+          console.log(`continuity_status=${summary.continuityStatus}`);
+          console.log(`continuity_policy=${summary.continuityPolicy}`);
+          console.log(`continuity_action=${summary.action}`);
+          NODE
+        env:
+          WATER_SPIDER_JSON_PATH: ${{ runner.temp }}/water-spider-summary.json
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AUTOMATION_WATER_SPIDER_AUTO_RETRY: ${{ vars.AUTOMATION_WATER_SPIDER_AUTO_RETRY }}
+          AUTOMATION_WATER_SPIDER_MAX_ATTEMPTS: ${{ vars.AUTOMATION_WATER_SPIDER_MAX_ATTEMPTS }}
+          AUTOMATION_WATER_SPIDER_WORKFLOW_ID: ${{ vars.AUTOMATION_WATER_SPIDER_WORKFLOW_ID }}
+          AUTOMATION_WATER_SPIDER_REF: ${{ vars.AUTOMATION_WATER_SPIDER_REF || github.ref_name }}
+
+      - name: Upload execution logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-execution-logs-${{ needs.check-trigger.outputs.issue_number }}
+          path: |
+            .ai/logs/
+            .ai/parallel-reports/

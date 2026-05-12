@@ -1,0 +1,7 @@
+# shared runner package install example
+# Copy this file to `.npmrc` only when you want local `npx` / `npm exec`
+# to install the shared runner package for this repo.
+# `.npmrc` is gitignored by the shared runner bootstrap.
+
+@takahiro-shimizu-1:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${AUTOMATION_RUNNER_PACKAGE_TOKEN}

@@ -1,0 +1,257 @@
+name: Autonomous Deploy Execute
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to process'
+        required: true
+        type: number
+      github_environment:
+        description: 'GitHub Environment name for approval / protection rules'
+        required: true
+        type: string
+      deploy_environment:
+        description: 'Deployment environment label passed into DeploymentAgent'
+        required: true
+        default: production
+        type: string
+      deploy_target:
+        description: 'Optional deploy target override'
+        required: false
+        type: string
+      deploy_approval_reason:
+        description: 'Optional approval note recorded in deployment artifacts'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: '20'
+  SHARED_RUNNER_COMMAND: "npx -y @takahiro-shimizu-1/automation-runner@0.1.14"
+  SHARED_RUNNER_PACKAGE_SCOPE: "@takahiro-shimizu-1"
+  SHARED_RUNNER_REGISTRY_URL: "https://npm.pkg.github.com"
+  NODE_AUTH_TOKEN: ${{ secrets.AUTOMATION_RUNNER_PACKAGE_TOKEN || github.token }}
+
+concurrency:
+  group: autonomous-agent-${{ github.repository }}-issue:agent/issue-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  execute-deploy:
+    name: Execute Autonomous Deploy Contract
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    permissions:
+      actions: write
+      issues: write
+      contents: read
+      packages: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Validate repository topology contract
+        run: |
+          $SHARED_RUNNER_COMMAND topology
+
+      - name: Validate deploy contract inputs
+        env:
+          AUTOMATION_DEPLOY_COMMAND: ${{ vars.AUTOMATION_DEPLOY_COMMAND }}
+          AUTOMATION_DEPLOY_USE_PROVIDER_PRESET: ${{ vars.AUTOMATION_DEPLOY_USE_PROVIDER_PRESET }}
+          AUTOMATION_DEPLOY_PROVIDER: ${{ vars.AUTOMATION_DEPLOY_PROVIDER }}
+          INPUT_DEPLOY_TARGET: ${{ inputs.deploy_target }}
+          VAR_DEPLOY_TARGET: ${{ vars.AUTOMATION_DEPLOY_TARGET }}
+        run: |
+          DEPLOY_TARGET="${INPUT_DEPLOY_TARGET:-$VAR_DEPLOY_TARGET}"
+          if [ -n "$AUTOMATION_DEPLOY_COMMAND" ]; then
+            exit 0
+          fi
+
+          if [ "$AUTOMATION_DEPLOY_USE_PROVIDER_PRESET" = "true" ] && [ -n "$DEPLOY_TARGET" ]; then
+            case "$AUTOMATION_DEPLOY_PROVIDER" in
+              cloud-run|github-pages)
+                $SHARED_RUNNER_COMMAND assert-provider-target \
+                  --root "$GITHUB_WORKSPACE" \
+                  --provider "$AUTOMATION_DEPLOY_PROVIDER" \
+                  --target "$DEPLOY_TARGET" >/dev/null
+                exit 0
+                ;;
+            esac
+          fi
+
+          echo "::error::Set AUTOMATION_DEPLOY_COMMAND or enable AUTOMATION_DEPLOY_USE_PROVIDER_PRESET=true with a supported provider preset (cloud-run or github-pages) and a deploy target."
+          exit 1
+
+      - name: Execute autonomous deploy runtime
+        id: execute
+        run: |
+          echo "Starting protected deploy runtime for Issue #${{ inputs.issue_number }}"
+          $SHARED_RUNNER_COMMAND dispatch \
+            --issue "${{ inputs.issue_number }}" \
+            --concurrency 3 \
+            --log-level info \
+            --execution-mode execute \
+            --bootstrap \
+            --bootstrap-reason "${{ inputs.deploy_approval_reason || format('workflow_dispatch deploy for issue {0}', inputs.issue_number) }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPOSITORY: ${{ github.repository }}
+          USE_WORKTREE: 'true'
+          AUTOMATION_ENABLE_PR_WRITE: ${{ vars.AUTOMATION_ENABLE_PR_WRITE }}
+          AUTOMATION_PR_BASE: ${{ vars.AUTOMATION_PR_BASE }}
+          AUTOMATION_PR_REVIEWERS: ${{ vars.AUTOMATION_PR_REVIEWERS }}
+          AUTOMATION_PR_LABELS: ${{ vars.AUTOMATION_PR_LABELS }}
+          AUTOMATION_PR_REQUIRE_MERGEABLE: ${{ vars.AUTOMATION_PR_REQUIRE_MERGEABLE }}
+          AUTOMATION_PR_MERGEABILITY_RETRIES: ${{ vars.AUTOMATION_PR_MERGEABILITY_RETRIES }}
+          AUTOMATION_PR_MERGEABILITY_DELAY_MS: ${{ vars.AUTOMATION_PR_MERGEABILITY_DELAY_MS }}
+          AUTOMATION_ENABLE_CODEGEN_WRITE: ${{ vars.AUTOMATION_ENABLE_CODEGEN_WRITE }}
+          AUTOMATION_CODEGEN_COMMAND: ${{ vars.AUTOMATION_CODEGEN_COMMAND }}
+          AUTOMATION_CODEGEN_ALLOWED_PATHS: ${{ vars.AUTOMATION_CODEGEN_ALLOWED_PATHS }}
+          AUTOMATION_CODEGEN_REQUIRE_CHANGES: ${{ vars.AUTOMATION_CODEGEN_REQUIRE_CHANGES }}
+          AUTOMATION_CODEGEN_POSTCHECK_COMMAND: ${{ vars.AUTOMATION_CODEGEN_POSTCHECK_COMMAND }}
+          AUTOMATION_REVIEW_MIN_SCORE: ${{ vars.AUTOMATION_REVIEW_MIN_SCORE }}
+          AUTOMATION_REVIEW_MAX_RETRIES: ${{ vars.AUTOMATION_REVIEW_MAX_RETRIES }}
+          AUTOMATION_REVIEW_CHECKS_JSON: ${{ vars.AUTOMATION_REVIEW_CHECKS_JSON }}
+          AUTOMATION_REVIEW_COVERAGE_THRESHOLD: ${{ vars.AUTOMATION_REVIEW_COVERAGE_THRESHOLD }}
+          AUTOMATION_REVIEW_COVERAGE_LABELS: ${{ vars.AUTOMATION_REVIEW_COVERAGE_LABELS }}
+          AUTOMATION_ENABLE_DEPLOY: 'true'
+          AUTOMATION_DEPLOY_COMMAND: ${{ vars.AUTOMATION_DEPLOY_COMMAND }}
+          AUTOMATION_DEPLOY_BUILD_COMMAND: ${{ vars.AUTOMATION_DEPLOY_BUILD_COMMAND }}
+          AUTOMATION_DEPLOY_USE_PROVIDER_PRESET: ${{ vars.AUTOMATION_DEPLOY_USE_PROVIDER_PRESET }}
+          AUTOMATION_DEPLOY_PROVIDER: ${{ vars.AUTOMATION_DEPLOY_PROVIDER }}
+          AUTOMATION_DEPLOY_TARGET: ${{ inputs.deploy_target || vars.AUTOMATION_DEPLOY_TARGET }}
+          AUTOMATION_DEPLOY_ENVIRONMENT: ${{ inputs.deploy_environment }}
+          AUTOMATION_DEPLOY_REQUIRE_APPROVAL: ${{ vars.AUTOMATION_DEPLOY_REQUIRE_APPROVAL || 'required' }}
+          AUTOMATION_DEPLOY_ALLOWED_APPROVERS: ${{ vars.AUTOMATION_DEPLOY_ALLOWED_APPROVERS }}
+          AUTOMATION_DEPLOY_APPROVED_BY: ${{ github.actor }}
+          AUTOMATION_DEPLOY_APPROVAL_SOURCE: github-environment:${{ inputs.github_environment }}
+          AUTOMATION_DEPLOY_APPROVAL_REASON: ${{ inputs.deploy_approval_reason || format('workflow_dispatch deploy for issue {0}', inputs.issue_number) }}
+          AUTOMATION_DEPLOY_PREFLIGHT_COMMAND: ${{ vars.AUTOMATION_DEPLOY_PREFLIGHT_COMMAND }}
+          AUTOMATION_DEPLOY_HEALTHCHECK_COMMAND: ${{ vars.AUTOMATION_DEPLOY_HEALTHCHECK_COMMAND }}
+          AUTOMATION_DEPLOY_HEALTHCHECK_RETRIES: ${{ vars.AUTOMATION_DEPLOY_HEALTHCHECK_RETRIES }}
+          AUTOMATION_DEPLOY_HEALTHCHECK_DELAY_MS: ${{ vars.AUTOMATION_DEPLOY_HEALTHCHECK_DELAY_MS }}
+          AUTOMATION_DEPLOY_ROLLBACK_COMMAND: ${{ vars.AUTOMATION_DEPLOY_ROLLBACK_COMMAND }}
+          AUTOMATION_CLOUD_RUN_PROJECT_ID: ${{ vars.AUTOMATION_CLOUD_RUN_PROJECT_ID }}
+          AUTOMATION_CLOUD_RUN_SERVICE_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_SERVICE_NAME }}
+          AUTOMATION_CLOUD_RUN_BACKEND_SERVICE_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_BACKEND_SERVICE_NAME }}
+          AUTOMATION_CLOUD_RUN_FRONTEND_SERVICE_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_FRONTEND_SERVICE_NAME }}
+          AUTOMATION_CLOUD_RUN_FRONTEND_URL: ${{ vars.AUTOMATION_CLOUD_RUN_FRONTEND_URL }}
+          AUTOMATION_CLOUD_RUN_BACKEND_URL: ${{ vars.AUTOMATION_CLOUD_RUN_BACKEND_URL }}
+          AUTOMATION_CLOUD_RUN_DATASET_NAME: ${{ vars.AUTOMATION_CLOUD_RUN_DATASET_NAME }}
+          AUTOMATION_CLOUD_RUN_CONNECTION_TYPE: ${{ vars.AUTOMATION_CLOUD_RUN_CONNECTION_TYPE }}
+          AUTOMATION_CLOUD_RUN_CLOUD_SQL_INSTANCE: ${{ vars.AUTOMATION_CLOUD_RUN_CLOUD_SQL_INSTANCE }}
+          AUTOMATION_CLOUD_RUN_PG_HOST: ${{ vars.AUTOMATION_CLOUD_RUN_PG_HOST }}
+          AUTOMATION_CLOUD_RUN_PG_USER: ${{ vars.AUTOMATION_CLOUD_RUN_PG_USER }}
+          AUTOMATION_CLOUD_RUN_PG_PASSWORD: ${{ secrets.AUTOMATION_CLOUD_RUN_PG_PASSWORD }}
+          AUTOMATION_CLOUD_RUN_PG_DATABASE: ${{ vars.AUTOMATION_CLOUD_RUN_PG_DATABASE }}
+          AUTOMATION_CLOUD_RUN_PG_PORT: ${{ vars.AUTOMATION_CLOUD_RUN_PG_PORT }}
+          AUTOMATION_CLOUD_RUN_PG_SSLMODE: ${{ vars.AUTOMATION_CLOUD_RUN_PG_SSLMODE }}
+          AUTOMATION_CLOUD_RUN_PG_SCHEMA: ${{ vars.AUTOMATION_CLOUD_RUN_PG_SCHEMA }}
+          AUTOMATION_CLOUD_RUN_ENABLE_CONTACT_DELETE: ${{ vars.AUTOMATION_CLOUD_RUN_ENABLE_CONTACT_DELETE }}
+          AUTOMATION_GITHUB_PAGES_ENABLED: ${{ vars.AUTOMATION_GITHUB_PAGES_ENABLED }}
+          AUTOMATION_GITHUB_PAGES_WORKFLOW: ${{ vars.AUTOMATION_GITHUB_PAGES_WORKFLOW }}
+          AUTOMATION_GITHUB_PAGES_REF: ${{ vars.AUTOMATION_GITHUB_PAGES_REF }}
+          AUTOMATION_GITHUB_PAGES_WAIT_FOR_RUN: ${{ vars.AUTOMATION_GITHUB_PAGES_WAIT_FOR_RUN }}
+          AUTOMATION_GITHUB_PAGES_RUN_TIMEOUT_MS: ${{ vars.AUTOMATION_GITHUB_PAGES_RUN_TIMEOUT_MS }}
+          AUTOMATION_GITHUB_PAGES_POLL_INTERVAL_MS: ${{ vars.AUTOMATION_GITHUB_PAGES_POLL_INTERVAL_MS }}
+        continue-on-error: true
+
+      - name: Summarize execution artifacts
+        id: summarize
+        if: always()
+        run: |
+          $SHARED_RUNNER_COMMAND summary \
+            --issue "${{ inputs.issue_number }}" \
+            --root "$GITHUB_WORKSPACE" \
+            --status "${{ steps.execute.outcome == 'success' && 'success' || 'failure' }}" \
+            --triggered-by "${{ github.actor }}" \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --out-md "$RUNNER_TEMP/autonomous-agent-comment.md" \
+            --out-json "$RUNNER_TEMP/autonomous-agent-summary.json"
+
+          {
+            echo "comment_path=$RUNNER_TEMP/autonomous-agent-comment.md"
+            echo "summary_json_path=$RUNNER_TEMP/autonomous-agent-summary.json"
+          } >> "$GITHUB_OUTPUT"
+
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('fs');
+          const summary = JSON.parse(fs.readFileSync(process.env.SUMMARY_JSON_PATH, 'utf8'));
+          console.log(`status=${summary.status}`);
+          console.log(`execution_mode=${summary.executionMode}`);
+          console.log(`failed_tasks=${summary.totals.failed}`);
+          NODE
+        env:
+          SUMMARY_JSON_PATH: ${{ runner.temp }}/autonomous-agent-summary.json
+
+      - name: Record deploy continuity policy
+        id: continuity
+        if: always()
+        run: |
+          $SHARED_RUNNER_COMMAND deploy-continuity \
+            --issue "${{ inputs.issue_number }}" \
+            --root "$GITHUB_WORKSPACE" \
+            --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --trigger-source "workflow_dispatch" \
+            --github-environment "${{ inputs.github_environment }}" \
+            --deploy-environment "${{ inputs.deploy_environment }}" \
+            --deploy-target "${{ inputs.deploy_target || vars.AUTOMATION_DEPLOY_TARGET || 'unspecified' }}" \
+            --out-md "$RUNNER_TEMP/deploy-continuity-comment.md" \
+            --out-json "$RUNNER_TEMP/deploy-continuity-summary.json"
+
+      - name: Upload execution logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: autonomous-deploy-logs-${{ inputs.issue_number }}
+          path: |
+            .ai/logs/
+            .ai/parallel-reports/
+          retention-days: 30
+
+      - name: Publish workflow summary
+        if: always()
+        run: |
+          {
+            echo "- Trigger source: \`workflow_dispatch\`"
+            echo "- Execution mode: \`execute\`"
+            echo "- GitHub Environment: \`${{ inputs.github_environment }}\`"
+            echo "- Deploy environment: \`${{ inputs.deploy_environment }}\`"
+            echo "- Deploy target: \`${{ inputs.deploy_target || vars.AUTOMATION_DEPLOY_TARGET || 'unspecified' }}\`"
+            echo "- Continuity policy: \`${{ steps.continuity.outputs.continuity_policy || 'protected-deploy-no-autoretry' }}\`"
+            echo
+            cat "${{ steps.summarize.outputs.comment_path }}"
+            echo
+            cat "${{ steps.continuity.outputs.comment_path }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on Issue
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          COMMENT_PATH: ${{ steps.summarize.outputs.comment_path }}
+          CONTINUITY_PATH: ${{ steps.continuity.outputs.comment_path }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const body = `${fs.readFileSync(process.env.COMMENT_PATH, 'utf8')}\n\n${fs.readFileSync(process.env.CONTINUITY_PATH, 'utf8')}`;
+            github.rest.issues.createComment({
+              issue_number: ${{ inputs.issue_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            })

@@ -1,0 +1,39 @@
+{
+  "$schema": "./gitnexus-contracts.schema.json",
+  "version": 1,
+  "contracts": [
+    {
+      "id": "CATALOG_PRODUCT_CONTRACT",
+      "type": "semantic-symbol",
+      "role": "consumer",
+      "symbol": "CATALOG_PRODUCT_CONTRACT",
+      "filePath": "server.mjs",
+      "version": "6",
+      "providers": [
+        "features/catalog"
+      ]
+    },
+    {
+      "id": "CART_CHECKOUT_CONTRACT",
+      "type": "semantic-symbol",
+      "role": "consumer",
+      "symbol": "CART_CHECKOUT_CONTRACT",
+      "filePath": "server.mjs",
+      "version": "6",
+      "providers": [
+        "features/cart"
+      ]
+    },
+    {
+      "id": "CHECKOUT_ORDER_CONTRACT",
+      "type": "semantic-symbol",
+      "role": "consumer",
+      "symbol": "CHECKOUT_ORDER_CONTRACT",
+      "filePath": "server.mjs",
+      "version": "1",
+      "providers": [
+        "features/checkout"
+      ]
+    }
+  ]
+}

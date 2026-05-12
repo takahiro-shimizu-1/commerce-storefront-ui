@@ -1,0 +1,101 @@
+name: PR Review Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+concurrency:
+  group: pr-review-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  packages: read
+  pull-requests: write
+  issues: write
+
+env:
+  NODE_VERSION: '20'
+  SHARED_RUNNER_COMMAND: "npx -y @takahiro-shimizu-1/automation-runner@0.1.14"
+  SHARED_RUNNER_PACKAGE_SCOPE: "@takahiro-shimizu-1"
+  SHARED_RUNNER_REGISTRY_URL: "https://npm.pkg.github.com"
+  NODE_AUTH_TOKEN: ${{ secrets.AUTOMATION_RUNNER_PACKAGE_TOKEN || github.token }}
+
+jobs:
+  review-gate:
+    if: ${{ 'review-and-pr' == 'review-and-pr' || 'review-and-pr' == 'deploy-enabled' }}
+    name: PR Review Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Repair linked issue review sync
+        if: github.event.pull_request.draft == false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          $SHARED_RUNNER_COMMAND review-sync repair-open-review-sync --pr="${PR_NUMBER}"
+
+      - name: Wait for ci-summary on current head SHA
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CHECK_REF: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $SHARED_RUNNER_COMMAND wait-for-check \
+            --ref "$CHECK_REF" \
+            --workflow "CI" \
+            --event "pull_request" \
+            --timeout-ms 1800000
+
+      - name: Run PR review gate
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          $SHARED_RUNNER_COMMAND pr-review-gate > /tmp/pr-review-gate.json
+          cat /tmp/pr-review-gate.json
+          {
+            echo 'result<<EOF'
+            cat /tmp/pr-review-gate.json
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: steps.gate.outputs.result != ''
+        env:
+          RESULT_JSON: ${{ steps.gate.outputs.result }}
+        run: |
+          node <<'NODE'
+          const result = JSON.parse(process.env.RESULT_JSON || 'null');
+          if (!result) {
+            process.exit(0);
+          }
+
+          const lines = [
+            '## PR Review Gate',
+            '',
+            `- PR: #${result.prNumber}`,
+            `- Status: ${result.status}`,
+            `- Automation-managed: ${result.automationManaged}`,
+            `- Gate comment action: ${result.commentAction}`,
+            `- Labels applied: ${(result.labelsApplied || []).join(', ') || 'none'}`,
+            `- Labels removed: ${(result.labelsRemoved || []).join(', ') || 'none'}`,
+          ];
+
+          require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          NODE

@@ -1,0 +1,6 @@
+{
+  "commands": {
+    "/miyabi-auto-app": ".claude/commands/miyabi-auto-app.md",
+    "/miyabi-status": ".claude/commands/miyabi-status.md"
+  }
+}

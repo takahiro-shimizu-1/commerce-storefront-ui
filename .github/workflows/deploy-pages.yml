@@ -1,0 +1,173 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'feature/**'
+      - 'fix/**'
+      - 'refactor/**'
+      - 'codex/**'
+  schedule:
+    - cron: '0 0,6,12,18 * * *'
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'GitHub Pages target name from config/miyabi-repository.json'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  packages: read
+
+env:
+  NODE_VERSION: '20'
+  SHARED_RUNNER_COMMAND: "npx -y @takahiro-shimizu-1/automation-runner@0.1.14"
+  SHARED_RUNNER_PACKAGE_SCOPE: "@takahiro-shimizu-1"
+  SHARED_RUNNER_REGISTRY_URL: "https://npm.pkg.github.com"
+  NODE_AUTH_TOKEN: ${{ secrets.AUTOMATION_RUNNER_PACKAGE_TOKEN || github.token }}
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  resolve-target:
+    if: ${{ 'review-and-pr' == 'deploy-enabled' && vars.AUTOMATION_GITHUB_PAGES_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    name: Resolve Pages target
+    outputs:
+      deploy_target: ${{ steps.resolve.outputs.deploy_target }}
+      artifact_path: ${{ steps.resolve.outputs.artifact_path }}
+      workspace: ${{ steps.resolve.outputs.workspace }}
+      dashboard_data: ${{ steps.resolve.outputs.dashboard_data }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+
+      - name: Validate repository topology contract
+        run: $SHARED_RUNNER_COMMAND topology
+
+      - name: Resolve target profile
+        id: resolve
+        env:
+          INPUT_DEPLOY_TARGET: ${{ github.event.inputs.deploy_target }}
+          VAR_DEPLOY_TARGET: ${{ vars.AUTOMATION_GITHUB_PAGES_TARGET || vars.AUTOMATION_DEPLOY_TARGET }}
+        run: |
+          DEFAULT_DEPLOY_TARGET="$($SHARED_RUNNER_COMMAND default-provider-target --root "$GITHUB_WORKSPACE" --provider github-pages)"
+          DEPLOY_TARGET="${INPUT_DEPLOY_TARGET:-${VAR_DEPLOY_TARGET:-$DEFAULT_DEPLOY_TARGET}}"
+          if [ -z "$DEPLOY_TARGET" ]; then
+            echo "::error::No GitHub Pages deploy target was provided and config/miyabi-repository.json does not define a default github-pages target."
+            exit 1
+          fi
+
+          $SHARED_RUNNER_COMMAND assert-provider-target \
+            --root "$GITHUB_WORKSPACE" \
+            --provider github-pages \
+            --target "$DEPLOY_TARGET" >/dev/null
+
+          ARTIFACT_PATH="$($SHARED_RUNNER_COMMAND github-pages-target-profile --root "$GITHUB_WORKSPACE" --target "$DEPLOY_TARGET" --field artifactPath)"
+          WORKSPACE="$($SHARED_RUNNER_COMMAND github-pages-target-profile --root "$GITHUB_WORKSPACE" --target "$DEPLOY_TARGET" --field workspace)"
+          DASHBOARD_DATA="$($SHARED_RUNNER_COMMAND github-pages-target-profile --root "$GITHUB_WORKSPACE" --target "$DEPLOY_TARGET" --field dashboardData)"
+
+          {
+            echo "deploy_target=$DEPLOY_TARGET"
+            echo "artifact_path=$ARTIFACT_PATH"
+            echo "workspace=$WORKSPACE"
+            echo "dashboard_data=$DASHBOARD_DATA"
+          } >> "$GITHUB_OUTPUT"
+
+  pages-not-enabled:
+    if: ${{ 'review-and-pr' == 'deploy-enabled' && vars.AUTOMATION_GITHUB_PAGES_ENABLED != 'true' }}
+    runs-on: ubuntu-latest
+    name: Pages disabled - skip deploy
+    steps:
+      - name: Summary
+        run: |
+          {
+            echo "### GitHub Pages deploy skipped"
+            echo
+            echo "Set repository variable \`AUTOMATION_GITHUB_PAGES_ENABLED=true\` after configuring Pages to build from GitHub Actions."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: resolve-target
+    if: ${{ 'review-and-pr' == 'deploy-enabled' && vars.AUTOMATION_GITHUB_PAGES_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    name: Deploy to GitHub Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: ${{ env.SHARED_RUNNER_REGISTRY_URL }}
+          scope: ${{ env.SHARED_RUNNER_PACKAGE_SCOPE }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate repository topology contract
+        run: $SHARED_RUNNER_COMMAND topology
+
+      - name: Build workspace
+        if: needs.resolve-target.outputs.workspace != ''
+        run: |
+          npm run build --workspace "${{ needs.resolve-target.outputs.workspace }}"
+
+      - name: Generate dashboard data
+        if: needs.resolve-target.outputs.dashboard_data == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PROJECT_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER || '1' }}
+          DASHBOARD_DATA_OUTPUT_PATH: ${{ format('{0}/dashboard-data.json', needs.resolve-target.outputs.artifact_path) }}
+        run: |
+          $SHARED_RUNNER_COMMAND dashboard-data --output "$DASHBOARD_DATA_OUTPUT_PATH"
+
+      - name: Verify artifact path exists
+        run: |
+          ARTIFACT_PATH="${{ needs.resolve-target.outputs.artifact_path }}"
+          if [ ! -e "$ARTIFACT_PATH" ]; then
+            echo "::error::GitHub Pages artifact path not found: $ARTIFACT_PATH"
+            exit 1
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ needs.resolve-target.outputs.artifact_path }}
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Summary
+        run: |
+          {
+            echo "### GitHub Pages deployed"
+            echo
+            echo "- Target: \`${{ needs.resolve-target.outputs.deploy_target }}\`"
+            echo "- Artifact path: \`${{ needs.resolve-target.outputs.artifact_path }}\`"
+            echo "- Workspace: \`${{ needs.resolve-target.outputs.workspace || 'none' }}\`"
+            echo "- URL: ${{ steps.deployment.outputs.page_url }}"
+          } >> "$GITHUB_STEP_SUMMARY"

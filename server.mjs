@@ -11,6 +11,10 @@ const portfolioRoot = path.resolve(process.env.COMMERCE_PORTFOLIO_ROOT || path.j
 const port = Number.parseInt(process.env.PORT || '5177', 10);
 const host = process.env.HOST || '127.0.0.1';
 
+export const CATALOG_PRODUCT_CONTRACT = 'catalog-product-v1';
+export const CART_CHECKOUT_CONTRACT = 'cart-checkout-v1';
+export const CHECKOUT_ORDER_CONTRACT = 'checkout-order-v1';
+
 const repos = {
   catalog: path.join(portfolioRoot, 'commerce-catalog-service'),
   cart: path.join(portfolioRoot, 'commerce-cart-service'),
