@@ -11,3 +11,9 @@ test('storefront renders the cart checkout readiness contract', () => {
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(app, /会計準備/);
 });
+
+test('storefront renders the catalog lifecycle badge contract', () => {
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /連携印/);
+  assert.match(app, /注文連携印/);
+});

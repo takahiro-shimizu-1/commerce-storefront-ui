@@ -51,6 +51,7 @@ function draw(order) {
     ['税区分', order.product?.taxClass],
     ['在庫', order.product?.stockStatus],
     ['出荷地域', order.product?.fulfillmentRegion],
+    ['連携印', order.product?.lifecycleBadge],
     ['価格', yen(order.product?.priceCents)],
   ]);
   ui.flowTitle.textContent = order.ok ? '最後まで通った' : '途中で止まった';
@@ -82,6 +83,7 @@ function summary(order) {
       ['計算方式', order.order?.pricingMode ?? order.checkoutCart?.pricingMode],
       ['会計準備', order.checkoutCart?.checkoutReady ? 'OK' : undefined],
       ['状態', order.order?.status ?? '未確定'],
+      ['注文連携印', order.order?.lifecycleBadges?.join(', ')],
     ])}</dl>
   `;
 }

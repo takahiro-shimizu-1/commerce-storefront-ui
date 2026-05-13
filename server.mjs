@@ -150,7 +150,7 @@ function impactExamples() {
       change: '商品情報の形を変える',
       contract: 'CATALOG_PRODUCT_CONTRACT',
       from: 'commerce-catalog-service',
-      to: ['commerce-cart-service', 'commerce-checkout-service'],
+      to: ['commerce-cart-service', 'commerce-checkout-service', 'commerce-storefront-ui'],
     },
     {
       kind: '簡単',
