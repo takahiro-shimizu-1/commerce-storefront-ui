@@ -7,6 +7,10 @@ if (scenario === 'small-cart-checkout') {
   applySmallCartCheckoutChange();
 } else if (scenario === 'large-catalog-product') {
   applyLargeCatalogProductChange();
+} else if (scenario === 'split-ui-copy') {
+  applySplitUiCopyChange();
+} else if (scenario === 'split-ui-style') {
+  applySplitUiStyleChange();
 } else {
   throw new Error(`Unsupported storefront Miyabi scenario: ${scenario}`);
 }
@@ -15,6 +19,8 @@ function resolveScenario() {
   const text = [process.env.AUTOMATION_TASK_TITLE, process.env.AUTOMATION_TASK_ID].filter(Boolean).join(' ').toLowerCase();
   if (text.includes('small-cart-checkout')) return 'small-cart-checkout';
   if (text.includes('large-catalog-product')) return 'large-catalog-product';
+  if (text.includes('split-ui-copy')) return 'split-ui-copy';
+  if (text.includes('split-ui-style')) return 'split-ui-style';
   return 'unknown';
 }
 
@@ -58,6 +64,22 @@ function applyLargeCatalogProductChange() {
     if (entry.id === 'CART_CHECKOUT_CONTRACT') entry.version = '8';
     if (entry.id === 'CHECKOUT_ORDER_CONTRACT') entry.version = '3';
   });
+}
+
+function applySplitUiCopyChange() {
+  replaceOnce(
+    'public/index.html',
+    '<h1>商品、カート、会計の動き</h1>',
+    '<h1>商品、カート、会計のつながり</h1>',
+  );
+}
+
+function applySplitUiStyleChange() {
+  replaceOnce(
+    'public/styles.css',
+    '.segment.is-active {\n  background: #ffffff;\n  color: #17212b;\n',
+    '.segment.is-active {\n  background: #ffffff;\n  color: #17212b;\n  outline: 2px solid #9fc7b3;\n  outline-offset: 2px;\n',
+  );
 }
 
 function ensureReadFileImport() {
