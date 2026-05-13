@@ -110,6 +110,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REPOSITORY: ${{ github.repository }}
           USE_WORKTREE: 'true'
+          AUTOMATION_CREATE_CHILD_ISSUES: ${{ vars.AUTOMATION_CREATE_CHILD_ISSUES }}
           AUTOMATION_ENABLE_PR_WRITE: ${{ vars.AUTOMATION_ENABLE_PR_WRITE }}
           AUTOMATION_PR_BASE: ${{ vars.AUTOMATION_PR_BASE }}
           AUTOMATION_PR_REVIEWERS: ${{ vars.AUTOMATION_PR_REVIEWERS }}
