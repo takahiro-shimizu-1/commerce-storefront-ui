@@ -116,6 +116,8 @@ h2 {
 .segment.is-active {
   background: #ffffff;
   color: #17212b;
+  outline: 2px solid #9fc7b3;
+  outline-offset: 2px;
   box-shadow: 0 1px 3px rgba(22, 32, 42, 0.16);
 }
 
