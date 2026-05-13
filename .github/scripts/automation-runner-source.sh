@@ -19,4 +19,4 @@ if [ ! -x "$runner_dir/node_modules/.bin/tsx" ]; then
   npm ci --prefix "$runner_dir" --no-audit --no-fund >&2
 fi
 
-node "$runner_dir/bin/automation-runner.mjs" "$@"
+AUTOMATION_HUB_ROOT="$runner_dir" node "$runner_dir/bin/automation-runner.mjs" "$@"
