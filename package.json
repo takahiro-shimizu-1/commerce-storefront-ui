@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "."
+  ],
   "scripts": {
     "dev": "node server.mjs",
     "test": "node --test test/*.test.mjs"
