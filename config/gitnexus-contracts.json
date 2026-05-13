@@ -19,7 +19,7 @@
       "role": "consumer",
       "symbol": "CART_CHECKOUT_CONTRACT",
       "filePath": "server.mjs",
-      "version": "6",
+      "version": "7",
       "providers": [
         "features/cart"
       ]
