@@ -7,6 +7,10 @@ if (scenario === 'small-cart-checkout') {
   applySmallCartCheckoutChange();
 } else if (scenario === 'large-catalog-product') {
   applyLargeCatalogProductChange();
+} else if (scenario === 'validation-cart-note-v9') {
+  applyValidationCartNoteV9Change();
+} else if (scenario === 'validation-catalog-signal-v10') {
+  applyValidationCatalogSignalV10Change();
 } else if (scenario === 'split-ui-copy') {
   applySplitUiCopyChange();
 } else if (scenario === 'split-ui-style') {
@@ -19,6 +23,8 @@ function resolveScenario() {
   const text = [process.env.AUTOMATION_TASK_TITLE, process.env.AUTOMATION_TASK_ID].filter(Boolean).join(' ').toLowerCase();
   if (text.includes('small-cart-checkout')) return 'small-cart-checkout';
   if (text.includes('large-catalog-product')) return 'large-catalog-product';
+  if (text.includes('validation-cart-note-v9')) return 'validation-cart-note-v9';
+  if (text.includes('validation-catalog-signal-v10')) return 'validation-catalog-signal-v10';
   if (text.includes('split-ui-copy')) return 'split-ui-copy';
   if (text.includes('split-ui-style')) return 'split-ui-style';
   return 'unknown';
@@ -63,6 +69,42 @@ function applyLargeCatalogProductChange() {
     if (entry.id === 'CATALOG_PRODUCT_CONTRACT') entry.version = '7';
     if (entry.id === 'CART_CHECKOUT_CONTRACT') entry.version = '8';
     if (entry.id === 'CHECKOUT_ORDER_CONTRACT') entry.version = '3';
+  });
+}
+
+function applyValidationCartNoteV9Change() {
+  replaceOnce(
+    'public/app.js',
+    "      ['会計準備', order.checkoutCart?.checkoutReady ? 'OK' : undefined],\n",
+    "      ['会計準備', order.checkoutCart?.checkoutReady ? 'OK' : undefined],\n      ['受け渡しメモ', order.order?.handoffNote ?? order.checkoutCart?.handoffNote],\n",
+  );
+  appendTest(
+    "test('storefront renders the cart checkout handoff note contract', () => {\n  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');\n  assert.match(app, /受け渡しメモ/);\n});\n",
+  );
+  updateContracts((entry) => {
+    if (entry.id === 'CART_CHECKOUT_CONTRACT') entry.version = '9';
+    if (entry.id === 'CHECKOUT_ORDER_CONTRACT') entry.version = '4';
+  });
+}
+
+function applyValidationCatalogSignalV10Change() {
+  replaceOnce(
+    'public/app.js',
+    "    ['連携印', order.product?.lifecycleBadge],\n",
+    "    ['連携印', order.product?.lifecycleBadge],\n    ['品質印', order.product?.qualitySignal],\n",
+  );
+  replaceOnce(
+    'public/app.js',
+    "      ['注文連携印', order.order?.lifecycleBadges?.join(', ')],\n",
+    "      ['注文連携印', order.order?.lifecycleBadges?.join(', ')],\n      ['注文品質印', order.order?.qualitySignals?.join(', ')],\n",
+  );
+  appendTest(
+    "test('storefront renders the catalog quality signal contract', () => {\n  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');\n  assert.match(app, /品質印/);\n  assert.match(app, /注文品質印/);\n});\n",
+  );
+  updateContracts((entry) => {
+    if (entry.id === 'CATALOG_PRODUCT_CONTRACT') entry.version = '10';
+    if (entry.id === 'CART_CHECKOUT_CONTRACT') entry.version = '10';
+    if (entry.id === 'CHECKOUT_ORDER_CONTRACT') entry.version = '5';
   });
 }
 
