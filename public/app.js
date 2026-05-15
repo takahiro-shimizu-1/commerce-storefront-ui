@@ -82,6 +82,7 @@ function summary(order) {
       ['合計', yen(order.order?.totalCents ?? order.checkoutCart?.totalCents)],
       ['計算方式', order.order?.pricingMode ?? order.checkoutCart?.pricingMode],
       ['会計準備', order.checkoutCart?.checkoutReady ? 'OK' : undefined],
+      ['受け渡しメモ', order.order?.handoffNote ?? order.checkoutCart?.handoffNote],
       ['状態', order.order?.status ?? '未確定'],
       ['注文連携印', order.order?.lifecycleBadges?.join(', ')],
     ])}</dl>

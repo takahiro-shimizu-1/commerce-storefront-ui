@@ -17,3 +17,8 @@ test('storefront renders the catalog lifecycle badge contract', () => {
   assert.match(app, /連携印/);
   assert.match(app, /注文連携印/);
 });
+
+test('storefront renders the cart checkout handoff note contract', () => {
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /受け渡しメモ/);
+});
