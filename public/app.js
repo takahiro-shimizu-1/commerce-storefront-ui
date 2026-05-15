@@ -52,6 +52,7 @@ function draw(order) {
     ['在庫', order.product?.stockStatus],
     ['出荷地域', order.product?.fulfillmentRegion],
     ['連携印', order.product?.lifecycleBadge],
+    ['品質印', order.product?.qualitySignal],
     ['価格', yen(order.product?.priceCents)],
   ]);
   ui.flowTitle.textContent = order.ok ? '最後まで通った' : '途中で止まった';
@@ -85,6 +86,7 @@ function summary(order) {
       ['受け渡しメモ', order.order?.handoffNote ?? order.checkoutCart?.handoffNote],
       ['状態', order.order?.status ?? '未確定'],
       ['注文連携印', order.order?.lifecycleBadges?.join(', ')],
+      ['注文品質印', order.order?.qualitySignals?.join(', ')],
     ])}</dl>
   `;
 }
